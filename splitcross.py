@@ -30,7 +30,7 @@ class GeneralCrossEntropyLoss(nn.Module):
 
             loss = self.CELoss(logits, targets)
             mean_loss = loss.mean()
-            return mean_loss, loss, logits
+            return mean_loss
         else:
             predictions = self.log_softmax(logits)
             print(predictions.shape, targets.shape, logits.shape)
@@ -55,6 +55,8 @@ class SplitCrossEntropyLoss(nn.Module):
         if self.nsplits > 1:
             self.tail_vectors = nn.Parameter(torch.zeros(self.nsplits - 1, hidden_size))
             self.tail_bias = nn.Parameter(torch.zeros(self.nsplits - 1))
+
+        print('n splits {} for splits {}'.format(self.nsplits, self.splits))
 
     def logprob(self, weight, bias, hiddens, splits=None, softmaxed_head_res=None, verbose=False):
         # First we perform the first softmax on the head vocabulary and the tombstones

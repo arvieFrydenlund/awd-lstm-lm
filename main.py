@@ -207,7 +207,7 @@ def train():
         output, hidden, rnn_hs, dropped_rnn_hs = model(data, hidden, return_h=True)
         raw_loss = criterion(model.decoder.weight, model.decoder.bias, output, targets)
 
-        exit()
+        #exit()
 
         loss = raw_loss
         # Activiation Regularization
