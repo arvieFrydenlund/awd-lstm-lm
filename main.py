@@ -11,33 +11,33 @@ import model
 from utils import batchify, get_batch, repackage_hidden
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
-parser.add_argument('--data', type=str, default='data/penn/',
+parser.add_argument('--data', type=str, default='data/pennchar/',
                     help='location of the data corpus')
 parser.add_argument('--model', type=str, default='LSTM',
                     help='type of recurrent net (LSTM, QRNN, GRU)')
-parser.add_argument('--emsize', type=int, default=400,
+parser.add_argument('--emsize', type=int, default=200,
                     help='size of word embeddings')
-parser.add_argument('--nhid', type=int, default=1150,
+parser.add_argument('--nhid', type=int, default=1000,
                     help='number of hidden units per layer')
 parser.add_argument('--nlayers', type=int, default=3,
                     help='number of layers')
-parser.add_argument('--lr', type=float, default=30,
+parser.add_argument('--lr', type=float, default=2e-3,
                     help='initial learning rate')
 parser.add_argument('--clip', type=float, default=0.25,
                     help='gradient clipping')
-parser.add_argument('--epochs', type=int, default=8000,
+parser.add_argument('--epochs', type=int, default=500,
                     help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=80, metavar='N',
+parser.add_argument('--batch_size', type=int, default=128, metavar='N',
                     help='batch size')
-parser.add_argument('--bptt', type=int, default=70,
+parser.add_argument('--bptt', type=int, default=150,
                     help='sequence length')
-parser.add_argument('--dropout', type=float, default=0.4,
+parser.add_argument('--dropout', type=float, default=0.1,
                     help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--dropouth', type=float, default=0.3,
+parser.add_argument('--dropouth', type=float, default=0.25,
                     help='dropout for rnn layers (0 = no dropout)')
-parser.add_argument('--dropouti', type=float, default=0.65,
+parser.add_argument('--dropouti', type=float, default=0.1,
                     help='dropout for input embedding layers (0 = no dropout)')
-parser.add_argument('--dropoute', type=float, default=0.1,
+parser.add_argument('--dropoute', type=float, default=0,
                     help='dropout to remove words from embedding layer (0 = no dropout)')
 parser.add_argument('--wdrop', type=float, default=0.5,
                     help='amount of weight dropout to apply to the RNN hidden to hidden matrix')
@@ -52,18 +52,23 @@ parser.add_argument('--log-interval', type=int, default=200, metavar='N',
 randomhash = ''.join(str(time.time()).split('.'))
 parser.add_argument('--save', type=str,  default=randomhash+'.pt',
                     help='path to save the final model')
-parser.add_argument('--alpha', type=float, default=2,
+parser.add_argument('--alpha', type=float, default=0,
                     help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
-parser.add_argument('--beta', type=float, default=1,
+parser.add_argument('--beta', type=float, default=0,
                     help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
 parser.add_argument('--wdecay', type=float, default=1.2e-6,
                     help='weight decay applied to all weights')
 parser.add_argument('--resume', type=str,  default='',
                     help='path of model to resume')
-parser.add_argument('--optimizer', type=str,  default='sgd',
+parser.add_argument('--optimizer', type=str,  default='adam',
                     help='optimizer to use (sgd, adam)')
-parser.add_argument('--when', nargs="+", type=int, default=[-1],
+parser.add_argument('--when', nargs="+", type=int, default=[300, 400],
                     help='When (which epochs) to divide the learning rate by 10 - accepts multiple')
+
+parser.add_argument('--criterion', type=str,  default='general',
+                    help='')
+
+
 args = parser.parse_args()
 args.tied = True
 
@@ -110,10 +115,11 @@ test_data = batchify(corpus.test, test_batch_size, args)
 # Build the model
 ###############################################################################
 
-from splitcross import SplitCrossEntropyLoss
+from splitcross import SplitCrossEntropyLoss, GeneralCrossEntropyLoss
 criterion = None
 
 ntokens = len(corpus.dictionary)
+print('Vocabulary size is {}'.format(ntokens))
 model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop, args.tied)
 ###
 if args.resume:
@@ -128,17 +134,22 @@ if args.resume:
             elif rnn.zoneout > 0: rnn.zoneout = args.wdrop
 ###
 if not criterion:
-    splits = []
-    if ntokens > 500000:
-        # One Billion
-        # This produces fairly even matrix mults for the buckets:
-        # 0: 11723136, 1: 10854630, 2: 11270961, 3: 11219422
-        splits = [4200, 35000, 180000]
-    elif ntokens > 75000:
-        # WikiText-103
-        splits = [2800, 20000, 76000]
-    print('Using', splits)
-    criterion = SplitCrossEntropyLoss(args.emsize, splits=splits, verbose=False)
+    if args.criterion == 'split':
+        splits = []
+        if ntokens > 500000:
+            # One Billion
+            # This produces fairly even matrix mults for the buckets:
+            # 0: 11723136, 1: 10854630, 2: 11270961, 3: 11219422
+            splits = [4200, 35000, 180000]
+        elif ntokens > 75000:
+            # WikiText-103
+            splits = [2800, 20000, 76000]
+        print('Using', splits)
+        criterion = SplitCrossEntropyLoss(args.emsize, splits=splits, verbose=False)
+
+        print('Splits are {}'.format(splits))
+    else:
+        criterion = GeneralCrossEntropyLoss()
 ###
 if args.cuda:
     model = model.cuda()
@@ -195,6 +206,8 @@ def train():
 
         output, hidden, rnn_hs, dropped_rnn_hs = model(data, hidden, return_h=True)
         raw_loss = criterion(model.decoder.weight, model.decoder.bias, output, targets)
+
+        exit()
 
         loss = raw_loss
         # Activiation Regularization

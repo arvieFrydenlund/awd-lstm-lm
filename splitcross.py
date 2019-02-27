@@ -6,6 +6,39 @@ import torch.nn as nn
 import numpy as np
 
 
+class GeneralCrossEntropyLoss(nn.Module):
+    """Loss function which works when targets are soft targets which form a probability dist,
+        or when the targerts are one hard target"""
+    def __init__(self, is_one_hot=True):
+        super(GeneralCrossEntropyLoss, self).__init__()
+        self.is_one_hot = is_one_hot
+        if is_one_hot:
+            self.log_softmax = None
+            self.CELoss = torch.nn.CrossEntropyLoss(reduction='none')
+        else:
+            self.log_softmax = nn.LogSoftmax(dim=-1)
+            self.CELoss = None
+
+    def forward(self, weight, bias, predictions, targets):
+        if weight is not None:
+            logits = torch.nn.functional.linear(predictions, weight, bias=bias)
+        else:
+            logits = predictions
+        if self.is_one_hot:
+
+            # print(logits.shape, targets.shape, predictions.shape)
+
+            loss = self.CELoss(logits, targets)
+            mean_loss = loss.mean()
+            return mean_loss, loss, logits
+        else:
+            predictions = self.log_softmax(logits)
+            print(predictions.shape, targets.shape, logits.shape)
+            loss = torch.sum(- targets.view(-1, predictions.shape[-1]) * predictions, 1)
+            mean_loss = torch.mean(loss)
+            return mean_loss, loss, logits
+
+
 class SplitCrossEntropyLoss(nn.Module):
     r'''SplitCrossEntropyLoss calculates an approximate softmax'''
     def __init__(self, hidden_size, splits, verbose=False):
